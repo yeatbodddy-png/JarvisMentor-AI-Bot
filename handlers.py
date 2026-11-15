@@ -4,7 +4,8 @@ import base64
 import docx
 from config import bot, client, MODES, user_histories, user_modes
 from ai_service import ask_ai, ask_ai_with_vision
-from utils import get_keyboard, send_long_message, send_smart_reply
+from utils import get_keyboard, send_long_message, send_smart_reply, make_py_file
+
 
 def check_mode_selected(message):
     """Проверяет, выбрал ли пользователь режим. Если нет — предупреждает и возвращает False."""
@@ -48,6 +49,7 @@ def handle_start(message):
             reply_markup=get_keyboard()
         )
 
+
 @bot.message_handler(commands=["reset"])
 def handle_reset(message):
     chat_id = message.chat.id
@@ -62,11 +64,44 @@ def handle_reset(message):
         parse_mode="Markdown"
     )
 
+
+@bot.message_handler(commands=["getfile"])
+def handle_get_file(message):
+    """Команда для получения последней генерации в виде готового .py файла"""
+    if not check_mode_selected(message):
+        return
+
+    chat_id = message.chat.id
+    current_mode = user_modes.get(chat_id)
+
+    # Берем последнее сообщение из истории диалога текущего режима
+    if chat_id in user_histories and current_mode in user_histories[chat_id] and user_histories[chat_id][current_mode]:
+        # Ищем последнее сообщение от ассистента, где мог быть код
+        last_messages = user_histories[chat_id][current_mode]
+        ai_responses = [msg["content"] for msg in last_messages if msg["role"] == "assistant"]
+
+        if ai_responses:
+            code_text = ai_responses[-1]  # Берем самый свежий ответ ИИ
+
+            # Конвертируем в файл через utils.py
+            file_data = make_py_file(code_text, filename="jarvis_script.py")
+
+            bot.send_document(
+                chat_id,
+                file_data,
+                caption="Вот твой готовый скрипт в `.py` формате, бро! 💻 Сохраняй и запускай."
+            )
+            return
+
+    bot.reply_to(message, "⚠️ В истории пока нет сгенерированного кода для отправки файлом.")
+
+
 @bot.message_handler(func=lambda msg: msg.text in MODES)
 def handle_mode_switch(message):
     chat_id = message.chat.id
     user_modes[chat_id] = message.text
-    bot.reply_to(message, f"Режим переключён на: *{message.text}*!", parse_mode="Markdown")
+    bot.reply_to(message, f"Режим переключен на: *{message.text}*!", parse_mode="Markdown")
+
 
 @bot.message_handler(content_types=['document'])
 def handle_document(message):
@@ -116,6 +151,7 @@ def handle_document(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Произошла ошибка при обработке файла: {e}")
 
+
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
     if not check_mode_selected(message):
@@ -136,6 +172,7 @@ def handle_photo(message):
 
     except Exception as e:
         bot.reply_to(message, f"❌ Не удалось обработать изображение: {e}")
+
 
 @bot.message_handler(content_types=["voice"])
 def handle_voice(message):
@@ -178,10 +215,56 @@ def handle_voice(message):
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
+
 @bot.message_handler(func=lambda msg: True, content_types=["text"])
 def handle_text(message):
     if not check_mode_selected(message):
         return
-    bot.send_chat_action(message.chat.id, "typing")
-    reply = ask_ai(message.chat.id, message.text)
+
+    chat_id = message.chat.id
+    user_text = message.text.lower()  # к нижнему регистру для удобной проверки
+
+    bot.send_chat_action(chat_id, "typing")
+
+    # Получаем ответ от ИИ (в режиме «Кодера» он будет яростно ворчать)
+    reply = ask_ai(chat_id, message.text)
+
+    # 1. Сначала ВСЕГДА отправляем его гениальный токсичный текст
     send_smart_reply(message, reply)
+
+    # Список триггеров, при которых пользователь требует файл
+    file_triggers = [
+        "скинь файлом",
+        "отправь файлом",
+        "скинь файл",
+        "отправь файл",
+        "дай файлом",
+        "в файл",
+        ".py",
+        "скачать",
+    ]
+
+    # Проверяем, просил ли пользователь файл и есть ли в ответе код
+    user_wants_file = any(trigger in user_text for trigger in file_triggers)
+    has_code_in_reply = "```" in reply
+
+    # 2. Если просил файл и код реально есть — поверх текста кидаем сам файл!
+    if user_wants_file and has_code_in_reply:
+        clean_code = reply
+        if "```python" in reply:
+            parts = reply.split("```python")
+            if len(parts) > 1:
+                clean_code = parts[1].split("```")[0].strip()
+        elif "```" in reply:
+            parts = reply.split("```")
+            if len(parts) > 1:
+                clean_code = parts[1].split("```")[0].strip()
+
+        file_data = make_py_file(clean_code, filename="jarvis_script.py")
+
+        # Бот кидает файл с пассивно-агрессивной подписью в стиле сеньора
+        bot.send_document(
+            chat_id,
+            file_data,
+            caption="💻 Держи свой файл, раз уж руки не доходят скопировать. Не благодари, стажёр."
+        )

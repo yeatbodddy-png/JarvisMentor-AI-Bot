@@ -46,9 +46,13 @@ def ask_ai(chat_id, user_text):
 
     history = user_histories[chat_id][current_mode]
 
+    # 🔥 ЗАЩИТА ОТ ЛИМИТОВ: Берем только последние 8 сообщений из истории,
+    # чтобы не забивать лимиты токенов (TPM/ITPM) на Groq.
+    recent_history = history[-8:]
+
     messages_payload = (
         [{"role": "system", "content": system_prompt}]
-        + history
+        + recent_history
         + [{"role": "user", "content": user_text}]
     )
 
@@ -60,11 +64,11 @@ def ask_ai(chat_id, user_text):
                 model=model_name,
                 messages=messages_payload,
                 temperature=0.7,
-                max_tokens=1500
+                max_tokens=1000  # Жестко ограничиваем длину ответа, чтобы не бить OTPM лимиты
             )
             reply_text = completion.choices[0].message.content
 
-            # 2. Обновление истории чата
+            # 2. Обновление истории чата (добавляем в полную историю и обрезаем до 20 последних)
             updated_history = history + [
                 {"role": "user", "content": user_text},
                 {"role": "assistant", "content": reply_text}
@@ -113,7 +117,7 @@ def ask_ai_with_vision(chat_id, user_prompt, base64_image):
                 }
             ],
             temperature=0.7,
-            max_tokens=1500
+            max_tokens=1000  # Ограничение токенов для vision-модели
         )
         return response.choices[0].message.content
     except Exception as e:

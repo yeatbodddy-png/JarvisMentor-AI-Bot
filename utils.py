@@ -1,5 +1,12 @@
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 from config import bot
+# utils.py
+
+def make_py_file(code_text: str, filename: str = "script.py"):
+  """Конвертирует строку с кодом в объект для отправки через telebot"""
+  file_bytes = code_text.encode("utf-8")
+  # telebot принимает файлы из памяти в виде кортежа (имя_файла, байты)
+  return (filename, file_bytes)
 
 def get_keyboard():
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
