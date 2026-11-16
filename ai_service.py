@@ -121,4 +121,4 @@ def ask_ai_with_vision(chat_id, user_prompt, base64_image):
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"❌ Ошибка при обращении к мультимодальной модели: {e}"
+        return (f"❌ Ошибка при обращении к мультимодальной модели: {e}")

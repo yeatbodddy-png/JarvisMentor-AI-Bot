@@ -38,8 +38,7 @@ def handle_start(message):
     )
 
     try:
-        reply = ask_ai_chat_preview(chat_id, greeting_prompt) if 'ask_ai_chat_preview' in globals() else ask_ai(chat_id,
-                                                                                                                greeting_prompt)
+        reply = ask_ai_chat_preview(chat_id, greeting_prompt) if 'ask_ai_chat_preview' in globals() else ask_ai(chat_id, greeting_prompt)
         bot.reply_to(message, reply, reply_markup=get_keyboard())
     except Exception as e:
         print(f"⚠️ Ошибка приветствия от ИИ: {e}")
@@ -76,14 +75,10 @@ def handle_get_file(message):
 
     # Берем последнее сообщение из истории диалога текущего режима
     if chat_id in user_histories and current_mode in user_histories[chat_id] and user_histories[chat_id][current_mode]:
-        # Ищем последнее сообщение от ассистента, где мог быть код
-        last_messages = user_histories[chat_id][current_mode]
-        ai_responses = [msg["content"] for msg in last_messages if msg["role"] == "assistant"]
+        ai_responses = [msg["content"] for msg in user_histories[chat_id][current_mode] if msg["role"] == "assistant"]
 
         if ai_responses:
             code_text = ai_responses[-1]  # Берем самый свежий ответ ИИ
-
-            # Конвертируем в файл через utils.py
             file_data = make_py_file(code_text, filename="jarvis_script.py")
 
             bot.send_document(
@@ -191,10 +186,10 @@ def handle_voice(message):
             temp_path = temp_audio.name
 
         with open(temp_path, "rb") as audio_file:
+            # 🔥 УБРАЛИ жесткий language="ru", теперь Whisper сам автоопределяет RU/EN!
             transcription = client.audio.transcriptions.create(
                 file=(os.path.basename(temp_path), audio_file.read()),
-                model="whisper-large-v3-turbo",
-                language="ru"
+                model="whisper-large-v3-turbo"
             )
 
         recognized_text = transcription.text.strip()
@@ -226,29 +221,23 @@ def handle_text(message):
 
     bot.send_chat_action(chat_id, "typing")
 
-    # Получаем ответ от ИИ (в режиме «Кодера» он будет яростно ворчать)
+    # Получаем ответ от ИИ (в режиме «Кодера» он будет ворчать, но помогать)
     reply = ask_ai(chat_id, message.text)
 
-    # 1. Сначала ВСЕГДА отправляем его гениальный токсичный текст
+    # 1. Сначала ВСЕГДА отправляем ответ ИИ
     send_smart_reply(message, reply)
 
-    # Список триггеров, при которых пользователь требует файл
+    # Список мультиязычных триггеров (русский + английский), при которых бот кидает файл
     file_triggers = [
-        "скинь файлом",
-        "отправь файлом",
-        "скинь файл",
-        "отправь файл",
-        "дай файлом",
-        "в файл",
-        ".py",
-        "скачать",
+        "скинь файлом", "отправь файлом", "скинь файл", "отправь файл",
+        "дай файлом", "в файл", ".py", "скачать",
+        "send as file", "send file", "give me file", "as a file"
     ]
 
-    # Проверяем, просил ли пользователь файл и есть ли в ответе код
     user_wants_file = any(trigger in user_text for trigger in file_triggers)
     has_code_in_reply = "```" in reply
 
-    # 2. Если просил файл и код реально есть — поверх текста кидаем сам файл!
+    # 2. Если просил файл и код реально есть — отправляем документ
     if user_wants_file and has_code_in_reply:
         clean_code = reply
         if "```python" in reply:
@@ -262,9 +251,18 @@ def handle_text(message):
 
         file_data = make_py_file(clean_code, filename="jarvis_script.py")
 
-        # Бот кидает файл с пассивно-агрессивной подписью в стиле сеньора
+        # Подбираем подпись в зависимости от характера режима
+        if current_mode == "🤝 Свой бро":
+            caption_text = "🤝 Держи файлик, бро! Сохраняй и запускай."
+        elif current_mode == "💻 Кодер":
+            caption_text = "💻 Держи свой файл, раз уж руки не доходят скопировать. Не благодари, стажёр."
+        elif current_mode == "🧠 Эксперт":
+            caption_text = "📈 Сформирован артефакт исходного кода согласно Enterprise-стандартам."
+        else:
+            caption_text = "💻 Держи готовый скрипт!"
+
         bot.send_document(
             chat_id,
             file_data,
-            caption="💻 Держи свой файл, раз уж руки не доходят скопировать. Не благодари, стажёр."
+            caption=caption_text
         )
